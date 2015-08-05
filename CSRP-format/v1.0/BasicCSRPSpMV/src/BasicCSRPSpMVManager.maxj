@@ -1,0 +1,65 @@
+
+import com.maxeler.maxcompiler.v2.build.EngineParameters;
+import com.maxeler.maxcompiler.v2.managers.custom.CustomManager;
+import com.maxeler.maxcompiler.v2.managers.custom.DFELink;
+import com.maxeler.maxcompiler.v2.managers.custom.blocks.KernelBlock;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.CPUTypes;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.EngineInterface;
+import com.maxeler.maxcompiler.v2.managers.engine_interfaces.InterfaceParam;
+
+class BasicCSRPSpMVManager extends CustomManager {
+
+    private static final int numPipes       = 2;
+    private static final int numCols        = 8192;
+
+    // this one is fixed due to the operator's feature.
+    private static final int loopLength = 15;
+    private static final String s_kernelName = "BasicCSRPSpMVKernel";
+
+    BasicCSRPSpMVManager(EngineParameters engineParameters) {
+        super(engineParameters);
+
+        KernelBlock k = addKernel(
+            new BasicCSRPSpMVKernel(makeKernelParameters(s_kernelName),
+                              numCols,
+                              numPipes,
+                              loopLength));
+
+        DFELink inputStream = addStreamFromCPU("input");
+        k.getInput("input") <== inputStream;
+        DFELink indexStream = addStreamFromCPU("index");
+        k.getInput("index") <== indexStream;
+
+        DFELink outputStream = addStreamToCPU("output");
+        outputStream <== k.getOutput("output");
+    }
+
+    static EngineInterface interfaceDefault() {
+        EngineInterface ei = new EngineInterface();
+
+        InterfaceParam length = ei.addParam("length", CPUTypes.INT);
+        InterfaceParam lengthInBytes = length * CPUTypes.FLOAT.sizeInBytes();
+        InterfaceParam maxColWidth = ei.addParam("maxColWidth", CPUTypes.UINT32);
+
+        ei.setTicks(s_kernelName, length * loopLength / numPipes);
+        ei.setScalar(s_kernelName, "maxColWidth", maxColWidth);
+        ei.setStream("input", CPUTypes.FLOAT, lengthInBytes);
+        ei.setStream("index", CPUTypes.UINT32, lengthInBytes);
+        ei.setStream("output", CPUTypes.FLOAT, lengthInBytes);
+
+        return ei;
+    }
+
+    public static void main(String[] args) {
+        EngineParameters params = new EngineParameters(args);
+        BasicCSRPSpMVManager manager = new BasicCSRPSpMVManager(params);
+
+        manager.createSLiCinterface(interfaceDefault());
+        
+        manager.addMaxFileConstant("numCols", numCols);
+        manager.addMaxFileConstant("numPipes", numPipes);
+
+        manager.build();
+    }
+}
+
